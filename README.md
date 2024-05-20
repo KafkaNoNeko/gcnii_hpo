@@ -25,7 +25,7 @@ Grid search, random search, and several Bayesian- and heuristic- based methods w
 
 The details for the search spaces used are given below. Note that grid search uses a subset of the search spaces due to limited time and resources.
 
-The notation $[a,s,b]$ denotes the set $\{a+i s \; : \; i=0..(b-a)/s\}$.
+The notation $[a,s,b]$ denotes the set $\{a+is: i=0..(b-a)/s\}$.
 
 | Hyperparameter       | Type        | Mixed                  | Continuous           |
 |----------------------|-------------|------------------------|----------------------|
