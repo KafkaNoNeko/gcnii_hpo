@@ -22,44 +22,47 @@ from smac.intensifier.hyperband import Hyperband
 cudaid = "cuda:0"
 device = torch.device(cudaid)
 
-def train_step(model,optimizer,features,labels,adj,idx_train):
+
+def train_step(model, optimizer, features, labels, adj, idx_train):
     model.train()
     optimizer.zero_grad()
-    output = model(features,adj)
+    output = model(features, adj)
     acc_train = accuracy(output[idx_train], labels[idx_train].to(device))
     loss_train = F.nll_loss(output[idx_train], labels[idx_train].to(device))
     loss_train.backward()
     optimizer.step()
-    return loss_train.item(),acc_train.item()
+    return loss_train.item(), acc_train.item()
 
 
-def validate_step(model,features,labels,adj,idx_val):
+def validate_step(model, features, labels, adj, idx_val):
     model.eval()
     with torch.no_grad():
-        output = model(features,adj)
+        output = model(features, adj)
         loss_val = F.nll_loss(output[idx_val], labels[idx_val].to(device))
         acc_val = accuracy(output[idx_val], labels[idx_val].to(device))
-        return loss_val.item(),acc_val.item()
+        return loss_val.item(), acc_val.item()
 
-def test_step(split,data_name,config,checkpt_file,variant):
+
+def test_step(split, data_name, config, checkpt_file, variant):
     # use gpu
     assert torch.cuda.is_available()
 
     splitstr = 'splits/'+data_name+'_split_0.6_0.2_'+str(split)+'.npz'
 
-    adj, features, labels, _ , _ , idx_test, num_features, num_labels = full_load_data(data_name,splitstr)
+    adj, features, labels, _, _, idx_test, num_features, num_labels = full_load_data(
+        data_name, splitstr)
     features = features.to(device)
     adj = adj.to(device)
 
     model = GCNII(nfeat=num_features,
-        nlayers=config["num_layers"],
-        nhidden=config["hidden_channels"],
-        nclass=num_labels,
-        dropout=config["dropout"],
-        lamda = config["lamda"], 
-        alpha=config["alpha"],
-        variant=variant,
-        act_fn=config["act_fn"]).to(device)
+                  nlayers=config["num_layers"],
+                  nhidden=config["hidden_channels"],
+                  nclass=num_labels,
+                  dropout=config["dropout"],
+                  lamda=config["lamda"],
+                  alpha=config["alpha"],
+                  variant=variant,
+                  act_fn=config["act_fn"]).to(device)
 
     model.load_state_dict(torch.load(checkpt_file))
 
@@ -68,51 +71,56 @@ def test_step(split,data_name,config,checkpt_file,variant):
         output = model(features, adj)
         loss_test = F.nll_loss(output[idx_test], labels[idx_test].to(device))
         acc_test = accuracy(output[idx_test], labels[idx_test].to(device))
-        return loss_test.item(),acc_test.item()
+        return loss_test.item(), acc_test.item()
+
 
 def train_gcn(config, seed=42, budget=100):
     # use gpu
     assert torch.cuda.is_available()
-    
-    data_name = config["data"]
-    splitstr = 'splits/'+data_name+'_split_0.6_0.2_'+str(config["split"])+'.npz'
 
-    adj, features, labels, idx_train, idx_val, _ , num_features, num_labels = full_load_data(data_name,splitstr)
+    data_name = config["data"]
+    splitstr = 'splits/'+data_name + \
+        '_split_0.6_0.2_'+str(config["split"])+'.npz'
+
+    adj, features, labels, idx_train, idx_val, _, num_features, num_labels = full_load_data(
+        data_name, splitstr)
     features = features.to(device)
     adj = adj.to(device)
 
     # define model
     model = GCNII(nfeat=num_features,
-        nlayers=config["num_layers"],
-        nhidden=config["hidden_channels"],
-        nclass=num_labels,
-        dropout=config["dropout"],
-        lamda = config["lamda"], 
-        alpha=config["alpha"],
-        variant=config["variant"] == 'True',
-        act_fn=config["act_fn"]).to(device)
-    
+                  nlayers=config["num_layers"],
+                  nhidden=config["hidden_channels"],
+                  nclass=num_labels,
+                  dropout=config["dropout"],
+                  lamda=config["lamda"],
+                  alpha=config["alpha"],
+                  variant=config["variant"] == 'True',
+                  act_fn=config["act_fn"]).to(device)
+
     if config["optim"] == "adam":
         optimizer = optim.Adam(model.parameters(), lr=config["lr"],
-                weight_decay=config["weight_decay"])
+                               weight_decay=config["weight_decay"])
     else:   # config["optim"] == "sgd"
         optimizer = optim.SGD(model.parameters(), lr=config["lr"],
-                weight_decay=config["weight_decay"], momentum=config["momentum"])
+                              weight_decay=config["weight_decay"], momentum=config["momentum"])
 
     # Terrible way of checkpointing, but this is the only way I could do it
     # Cannot add a checkpoint to the search space since the value cannot be randomised (even after calling random)
     # And the train function seems to be only able to return the error and nothing else.
 
     ckpt_str = str(config["lr"]) + str(config["alpha"]) + str(config["lamda"]) + str(config["num_layers"]) \
-                + str(config["hidden_channels"]) + str(config["dropout"]) + str(config["weight_decay"]) + str(config["optim"]) \
-                + config["act_fn"] + data_name
+        + str(config["hidden_channels"]) + str(config["dropout"]) + str(config["weight_decay"]) + str(config["optim"]) \
+        + config["act_fn"] + data_name
 
     checkpt_file = 'pretrained/'+ckpt_str+'.pt'
 
     best = 999999999
     for epoch in range(config["epochs"]):
-        loss_tra,acc_tra = train_step(model,optimizer,features,labels,adj,idx_train)
-        loss_val,acc_val = validate_step(model,features,labels,adj,idx_val)
+        loss_tra, acc_tra = train_step(
+            model, optimizer, features, labels, adj, idx_train)
+        loss_val, acc_val = validate_step(
+            model, features, labels, adj, idx_val)
 
         if loss_val < best:
             torch.save(model.state_dict(), checkpt_file)
@@ -147,7 +155,7 @@ def train_one_split(split, args):
         walltime_limit=7200,
         n_trials=args.num_samples,
         min_budget=20,  # train for at least 20 epochs
-        max_budget=100, # train for max 100 epochs
+        max_budget=100,  # train for max 100 epochs
         n_workers=8,
     )
 
@@ -170,15 +178,20 @@ def train_one_split(split, args):
 
     return incumbent
 
+
 def main():
     # Training settings
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=42, help='Random seed.')
     parser.add_argument('--data', default='cora', help='Dataset.')
-    parser.add_argument('--algo', default='smac', help='Search algorithm.')                     # kept as an arg for convenience
-    parser.add_argument('--scheduler', default='hyperband', help='Scheduler.')                  # kept as an arg for convenience
-    parser.add_argument('--variant', action='store_true', default=False, help='GCN* model.')
-    parser.add_argument('--num_samples', type=int, default=150, help='Number of samples to be used by the HPO algorithm.')
+    # kept as an arg for convenience
+    parser.add_argument('--algo', default='smac', help='Search algorithm.')
+    # kept as an arg for convenience
+    parser.add_argument('--scheduler', default='hyperband', help='Scheduler.')
+    parser.add_argument('--variant', action='store_true',
+                        default=False, help='GCN* model.')
+    parser.add_argument('--num_samples', type=int, default=150,
+                        help='Number of samples to be used by the HPO algorithm.')
 
     args = parser.parse_args()
     random.seed(args.seed)
@@ -192,37 +205,36 @@ def main():
     best_result = train_one_split(split, args)
 
     ckpt_str = str(best_result["lr"]) + str(best_result["alpha"]) + str(best_result["lamda"]) + str(best_result["num_layers"]) \
-                + str(best_result["hidden_channels"]) + str(best_result["dropout"]) + str(best_result["weight_decay"]) + str(best_result["optim"]) \
-                + best_result["act_fn"] + args.data
+        + str(best_result["hidden_channels"]) + str(best_result["dropout"]) + str(best_result["weight_decay"]) + str(best_result["optim"]) \
+        + best_result["act_fn"] + args.data
     checkpt_file = 'pretrained/'+ckpt_str+'.pt'
 
     acc_list = []
     for split in range(10):
         # Evaluate on test set
-        test_acc = test_step(split, 
-                            args.data, 
-                            best_result, 
-                            checkpt_file,
-                            args.variant)[1]
+        test_acc = test_step(split,
+                             args.data,
+                             best_result,
+                             checkpt_file,
+                             args.variant)[1]
         acc_list.append(test_acc)
-    
+
     time_taken = time.time() - start_time
     mean_test_acc = np.mean(acc_list)
 
     print("Time taken: {:.4f}s".format(time_taken))
     print("Mean Test acc.:{:.2f}".format(mean_test_acc))
 
-    # move best model
-    call(['cp', '-r', '-p', checkpt_file, '/home/kafkacat/best_hpo'])
-
     # write to csv file
     with open('logs.csv', 'a', newline='') as file:
         writer = csv.writer(file)
 
-        data_list = [args.data, args.algo, args.scheduler, time_taken, mean_test_acc, dict(best_result), checkpt_file]
+        data_list = [args.data, args.algo, args.scheduler,
+                     time_taken, mean_test_acc, dict(best_result), checkpt_file]
         data_list.extend(acc_list)
         # dataset, algorithm, scheduler, time taken, mean test acc, best result config, best result path, test accuracies for each run
-        writer.writerow([x for x in data_list]) 
+        writer.writerow([x for x in data_list])
+
 
 if __name__ == "__main__":
     main()

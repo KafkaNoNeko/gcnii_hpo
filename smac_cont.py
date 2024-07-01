@@ -201,9 +201,6 @@ def main():
     print("Time taken: {:.4f}s".format(time_taken))
     print("Mean Test acc.:{:.2f}".format(mean_test_acc))
 
-    # move best model
-    call(['cp', '-r', '-p', checkpt_file, '/home/kafkacat/best_hpo'])
-
     # write to csv file
     with open('logs.csv', 'a', newline='') as file:
         writer = csv.writer(file)
